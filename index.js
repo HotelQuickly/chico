@@ -16,51 +16,70 @@ controller.spawn({
 // Slack returns users as IDs, but they're not user-readable.
 // This is a central "user ID" -> "Promise of a user name" list
 // We never invalidate - once loaded, we assume username is right forever
-var usernames = {};
+var users = {};
 
-// Get a promise that resolves to a username, given a userid
-function getUserName(userid, bot) {
-  if (usernames[userid]) return usernames[userid];
-
-  return usernames[userid] = new Promise(function(resolve){
-    bot.api.users.info({user: userid}, function(err, resp){
-      resolve(resp.user.name);
-    });
-  });
+function initUsers(bot) {
+  bot.api.users.list({}, function(err, rsp){
+    rsp.members.forEach(member => users[member.id] = member.name);
+  })
 }
 
-// A two-level deep hash of inOut[channelid][userid] => username for every
-// user that's currently checked in
+controller.on(['user_change', 'team_join'], function(bot, msg){
+  users[msg.user.id] = msg.user.name;
+})
+
+// A two-level deep hash of inOut[channelid][userid] => true (for
+// users that are currently checked in) or a Date object (for every
+// user has been checked in before, when they checked out)
 var inOut = {};
 
 function checkIn(chan, user, bot) {
   if (!inOut[chan]) inOut[chan] = {};
-
-  inOut[chan][user] = '<pending>';
-  getUserName(user, bot).then(function(name){
-    if (inOut[chan][user] == '<pending>') inOut[chan][user] = name;
-  });
+  inOut[chan][user] = true;
 }
 
-function checkOut(chan, user) {
-  if (inOut[chan]) delete inOut[chan][user];
+function checkOut(chan, user, timestamp) {
+  if (inOut[chan]) inOut[chan][user] = new Date(parseInt(timestamp) * 1000);
 }
 
 // give the bot something to listen for.
-controller.hears(['^\\s*ci', '^\\s*check\\s*in'], 'ambient', function(bot, msg) {
+controller.hears('^\\s*ch?e?c?k?\\s*i', 'ambient', function(bot, msg) {
   checkIn(msg.channel, msg.user, bot);
 });
 
-controller.hears(['^\\s*co', '^\\s*check\\s*out'], 'ambient', function(bot, msg) {
-  checkOut(msg.channel, msg.user);
+controller.hears('^\\s*ch?e?c?k?\\s*o', 'ambient', function(bot, msg) {
+  checkOut(msg.channel, msg.user, msg.ts);
 });
 
 controller.hears('who', 'direct_mention', function(bot, msg) {
   var channel = inOut[msg.channel] || {};
   var names = [];
-  for (var k in channel) names[names.length] = channel[k];
+  for (var user in channel) {
+    if (channel[user] === true) names[names.length] = users[user];
+  }
+
   bot.reply(msg, {
     text: names.length ? names.join(', ') : "No one"
+  });
+});
+
+controller.hears('(.*) in', 'direct_mention', function(bot, msg) {
+  var channel = inOut[msg.channel] || {};
+  var names = [];
+  var who = msg.match[1].toLowerCase();
+
+  for (var user in channel) {
+    if (users[user].toLowerCase().indexOf(who) !== -1) {
+      var suffix = (channel[user] === true) ?
+        'is in' :
+        'is out (last seen '+channel[user].toLocaleString()+')';
+
+      names[names.length] = users[user] + ' ' + suffix;
+    }
+  }
+
+  bot.reply(msg, {
+    text: names.length ? names.join("\n") : "Sorry, I don't recognise the name"
   });
 });
 
@@ -72,12 +91,12 @@ function parseChannelHistory(channel, bot) {
     while (i--) {
       var message = rsp.messages[i];
 
-      if (message.text.match(/^\s*(ci|(check\s*in))/i)) {
+      if (message.text.match(/^\s*ch?e?c?k?\s*i/i)) {
         checkIn(channel, message.user, bot);
       }
 
-      if (message.text.match(/^\s*(co|(check\s*out))/i)) {
-        checkOut(channel, message.user);
+      if (message.text.match(/^\s*ch?e?c?k?\s*o/i)) {
+        checkOut(channel, message.user, message.ts);
       }
     }
   });
@@ -91,12 +110,15 @@ controller.on('hello', function(bot, msg) {
     console.dir(inOut);
   }, 8000);
 
+  initUsers(bot);
+
   bot.api.channels.list({}, function(err, rsp) {
-    for (var i = 0; i < rsp.channels.length; i++) {
-      var channel = rsp.channels[i];
-      if (channel.is_member) parseChannelHistory(channel.id, bot);
-    }
-  })
+    rsp.channels.forEach(channel => {
+      if (channel.is_member) {
+        parseChannelHistory(channel.id, bot);
+      }
+    })
+  });
 
   setInterval(function(){ bot.rtm.ping(); }, 3000);
 });

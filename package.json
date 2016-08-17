@@ -1,6 +1,6 @@
 {
   "name": "chico",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Check In / Out bot for slack",
   "main": "index.js",
   "scripts": {
