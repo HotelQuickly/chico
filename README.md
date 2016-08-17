@@ -2,7 +2,7 @@ Basic slack check in / check out robot
 
 To run, do
   npm install
-  CHICO_TOKEN='{your slack bot token}' node ./index.js
+  CHICO_TOKEN='{your slack bot token}' node ./chico.js
 
 Invite chico to a channel. He'll look for "check in" and "check out" messages
 and remember who's checked in.

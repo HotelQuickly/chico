@@ -120,5 +120,12 @@ controller.on('hello', function(bot, msg) {
     })
   });
 
-  setInterval(function(){ bot.rtm.ping(); }, 3000);
+  setInterval(function(){
+    try {
+      bot.rtm.ping();
+    }
+    catch (e) {
+      console.log('Error while pinging', e);
+    }
+  }, 3000);
 });
