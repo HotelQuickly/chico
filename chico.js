@@ -51,30 +51,48 @@ controller.hears('^\\s*ch?e?c?k?\\s*o', 'ambient', function(bot, msg) {
   checkOut(msg.channel, msg.user, msg.ts);
 });
 
-controller.hears('who', 'direct_mention', function(bot, msg) {
+controller.hears('who.*?(in|out|$)', 'direct_mention', function(bot, msg) {
   var channel = inOut[msg.channel] || {};
   var names = [];
+  var out = msg.match[1] == 'out'
+
   for (var user in channel) {
-    if (channel[user] === true) names[names.length] = users[user];
+    var show = out ? (channel[user] !== true) : (channel[user] === true);
+    if (show) names[names.length] = users[user];
   }
 
   bot.reply(msg, {
-    text: names.length ? names.join(', ') : "No one"
+    text: (out ? 'Out: ' : 'In: ') + (names.length ? names.join(', ') : "No one")
   });
 });
 
-controller.hears('(.*) in', 'direct_mention', function(bot, msg) {
+controller.hears('(.*) (in|out)', 'direct_mention', function(bot, msg) {
   var channel = inOut[msg.channel] || {};
   var names = [];
   var who = msg.match[1].toLowerCase();
+
+  var dateOptions = {
+    timeZone: "Asia/Bangkok",
+    weekday: 'long',
+    hour: 'numeric',
+    minute: 'numeric'
+  };
 
   for (var user in channel) {
     if (users[user].toLowerCase().indexOf(who) !== -1) {
       var suffix = (channel[user] === true) ?
         'is in' :
-        'is out (last seen '+channel[user].toLocaleString()+')';
+        'is out (last seen '+channel[user].toLocaleString('en-US', dateOptions)+')';
 
       names[names.length] = users[user] + ' ' + suffix;
+    }
+  }
+
+  if (!names.length) {
+    for (var user in users) {
+      if (users[user].toLowerCase().indexOf(who) !== -1) {
+        names[names.length] = users[user] + ' is out (never seen)';
+      }
     }
   }
 
